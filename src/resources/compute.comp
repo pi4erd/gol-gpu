@@ -1,0 +1,13 @@
+#version 460 core
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout (rgba32f, binding = 0) uniform image2D screen;
+
+void main() {
+	ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+    vec2 uv = vec2(pixel_coords) / vec2(gl_NumWorkGroups.xy);
+    vec3 color = vec3(uv, 1);
+    vec4 pixel = vec4(color, 1);
+
+	imageStore(screen, pixel_coords, pixel);
+}
