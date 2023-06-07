@@ -4,6 +4,9 @@
 #include <vector>
 #include <cstring>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
@@ -12,9 +15,11 @@
 
 GLFWwindow* window;
 
-GLuint vbo, ebo, vao, fbo, fbt, blitprg, golcomp;
+GLuint vbo, ebo, vao, fbo, fbt, fbt2, blitprg, golcomp, initprg, copyprg;
 
-int Width = 800, Height = 600;
+int Width = 1920, Height = 1080;
+
+const int TextureWidth = 1024, TextureHeight = 1024;
 
 const float vertices[] = {
     -1, -1, 0, 0, 0,
@@ -45,6 +50,7 @@ GLuint createShaderFromBinary(const char* path, GLenum type);
 void init();
 void render(double delta);
 void end();
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void resize(GLFWwindow* window, int width, int height);
 
 int main() {
@@ -52,7 +58,7 @@ int main() {
 
     glfwWindowHint(GLFW_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(Width, Height, "Game Of Life", nullptr, nullptr);
     if(!window) {
@@ -61,8 +67,8 @@ int main() {
     }
 
     glfwMakeContextCurrent(window);
-
     glfwSetWindowSizeCallback(window, resize);
+    glfwSetScrollCallback(window, scrollCallback);
 
     glewInit();
 
@@ -112,6 +118,29 @@ int linkProgram(GLuint program)
     }
 
     return 1;
+}
+
+GLuint createTextureFromPath(const char* path, int unit) {
+    GLuint result;
+    glCreateTextures(GL_TEXTURE_2D, 1, &result);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
+
+    if(!data) {
+        std::cout << "Failed to load texture!" << std::endl;
+        return -1;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, result);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(data);
+
+    glBindTextureUnit(unit, result);
+
+    return result;
 }
 
 GLuint createShaderFromBinary(const char *path, GLenum type)
@@ -177,19 +206,27 @@ void init()
 
     blitprg = glCreateProgram();
     golcomp = glCreateProgram();
-    #ifdef SHADER_BIN
+    initprg = glCreateProgram();
+    copyprg = glCreateProgram();
+#ifdef SHADER_BIN
     GLuint vx = createShaderFromBinary("resources/vertex.vert.spv", GL_VERTEX_SHADER);
     GLuint fg = createShaderFromBinary("resources/fragment.frag.spv", GL_FRAGMENT_SHADER);
     GLuint cmpsh = createShaderFromBinary("resources/compute.comp.spv", GL_COMPUTE_SHADER);
-    #else
+    GLuint initsh = createShaderFromBinary("resources/initsh.comp.spv", GL_COMPUTE_SHADER);
+    GLuint copysh = createShaderFromBinary("resources/copyprg.comp.spv", GL_COMPUTE_SHADER);
+#else
     GLuint vx = createShaderFromSource("resources/vertex.vert", GL_VERTEX_SHADER);
     GLuint fg = createShaderFromSource("resources/fragment.frag", GL_FRAGMENT_SHADER);
     GLuint cmpsh = createShaderFromSource("resources/compute.comp", GL_COMPUTE_SHADER);
-    #endif
+    GLuint initsh = createShaderFromSource("resources/initsh.comp", GL_COMPUTE_SHADER);
+    GLuint copysh = createShaderFromSource("resources/copyprg.comp", GL_COMPUTE_SHADER);
+#endif
 
     glAttachShader(blitprg, vx);
     glAttachShader(blitprg, fg);
     glAttachShader(golcomp, cmpsh);
+    glAttachShader(initprg, initsh);
+    glAttachShader(copyprg, copysh);
 
     if(!linkProgram(blitprg)) {
         std::cerr << "Program link failed" << std::endl;
@@ -197,17 +234,23 @@ void init()
     if(!linkProgram(golcomp)) {
         std::cerr << "Program link failed" << std::endl;
     }
+    if(!linkProgram(initprg)) {
+        std::cerr << "Program link failed" << std::endl;
+    }
+    if(!linkProgram(copyprg)) {
+        std::cerr << "Program link failed" << std::endl;
+    }
 
     glDetachShader(blitprg, vx);
     glDetachShader(blitprg, fg);
     glDetachShader(golcomp, cmpsh);
+    glDetachShader(initprg, initsh);
+    glDetachShader(copyprg, copysh);
     glDeleteShader(vx);
     glDeleteShader(fg);
     glDeleteShader(cmpsh);
-
-    glUseProgram(golcomp);
-    glDispatchCompute(Width, Height, 1);
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    glDeleteShader(initsh);
+    glDeleteShader(copysh);
 
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
@@ -225,33 +268,74 @@ void init()
     glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(float) * 5, (void*)(sizeof(float) * 3));
     glEnableVertexAttribArray(1);
 
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
     glCreateTextures(GL_TEXTURE_2D, 1, &fbt);
+    glBindTexture(GL_TEXTURE_2D, fbt);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTextureStorage2D(fbt, 1, GL_RGBA32F, Width, Height);
-    glBindImageTexture(0, fbt, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTextureStorage2D(fbt, 1, GL_RGBA32F, TextureWidth, TextureHeight);
+    glBindImageTexture(0, fbt, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glCreateTextures(GL_TEXTURE_2D, 1, &fbt2);
+    glBindTexture(GL_TEXTURE_2D, fbt2);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTextureStorage2D(fbt2, 1, GL_RGBA32F, TextureWidth, TextureHeight);
+    glBindImageTexture(1, fbt2, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
+    GLuint inittexture = createTextureFromPath("resources/init.png", 2);
+    glBindImageTexture(2, inittexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+
+    glUseProgram(initprg);
+    glDispatchCompute(TextureWidth, TextureHeight, 1);
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+    glDeleteTextures(1, &inittexture);
 }
+
+float zoom = 1;
+
+float posx = 0, posy = 0;
+
 void render(double delta) {
     glUseProgram(golcomp);
-    glDispatchCompute(Width, Height, 1);
+    glDispatchCompute(TextureWidth, TextureHeight, 1);
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
     glUseProgram(blitprg);
     glBindTextureUnit(0, fbt);
+    glBindTextureUnit(1, fbt2);
+    glUniform1f(glGetUniformLocation(blitprg, "zoom"), zoom);
+    glUniform1f(glGetUniformLocation(blitprg, "aspectRatio"), Width / (float)Height);
+    glUniform1f(glGetUniformLocation(blitprg, "posx"), posx);
+    glUniform1f(glGetUniformLocation(blitprg, "posy"), posy);
     glUniform1i(glGetUniformLocation(blitprg, "mainTexture"), 0);
     glBindVertexArray(vao);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(indices[0]), GL_UNSIGNED_INT, 0);
 
+    glUseProgram(copyprg);
+    glDispatchCompute(TextureWidth, TextureHeight, 1);
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
     delay -= delta;
 
+    if(glfwGetKey(window, GLFW_KEY_D)) {
+        posx += delta / zoom;
+    }
+    if(glfwGetKey(window, GLFW_KEY_A)) {
+        posx -= delta / zoom;
+    }
+    if(glfwGetKey(window, GLFW_KEY_W)) {
+        posy += delta / zoom;
+    }
+    if(glfwGetKey(window, GLFW_KEY_S)) {
+        posy -= delta / zoom;
+    }
+    
     if(delay <= 0) {
         char newTitle[64];
         sprintf(newTitle, "Game Of Life | %d fps", frames);
@@ -264,17 +348,26 @@ void render(double delta) {
 void end() {
     glDeleteProgram(blitprg);
     glDeleteProgram(golcomp);
+    glDeleteProgram(initprg);
+    glDeleteProgram(copyprg);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);
     glDeleteTextures(1, &fbt);
+    glDeleteTextures(1, &fbt2);
     glDeleteFramebuffers(1, &fbo);
     glfwDestroyWindow(window);
     glfwTerminate();
 }
 
+void scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+{
+    zoom *= (1 + yoffset * 0.1);
+}
+
 void resize(GLFWwindow *window, int width, int height)
 {
+    glViewport(0, 0, width, height);
     Width = width;
     Height = height;
 }

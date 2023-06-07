@@ -1,0 +1,21 @@
+#version 460 core
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout (rgba32f, binding = 0) uniform image2D screen;
+layout (rgba32f, binding = 1) uniform image2D newScreen;
+layout (rgba32f, binding = 2) uniform image2D initTexture;
+
+float random(vec2 coords) {
+    return fract(sin(dot(coords, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+    vec2 uv = vec2(pixel_coords) / vec2(gl_NumWorkGroups.xy);
+
+    float result = round(random(uv));
+
+    vec4 pixel = vec4(result, result, result, 1);
+
+    imageStore(screen, pixel_coords, pixel);
+}

@@ -41,6 +41,8 @@ foreach(source IN LISTS SHADERS)
     list(APPEND SPV_SHADERS ${SHADER_BINARY_DIR}/${FILENAME}.spv)
 endforeach()
 
+configure_file(${SHADER_SOURCE_DIR}/init.png ${SHADER_BINARY_DIR}/init.png COPYONLY)
+
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS} ${SHADER_RES})
 add_executable(${PROJECT_NAME} main.cpp)
 target_link_libraries(${PROJECT_NAME} GLEW::GLEW glfw OpenGL::GL)
