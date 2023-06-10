@@ -5,25 +5,28 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(Freetype REQUIRED)
+find_package(glm REQUIRED)
+
 include_directories(${GLEW_INCLUDE_DIRS})
 link_libraries(${GLEW_LIBRARIES})
 
 find_program(glslangv_executable NAMES /usr/bin/glslangValidator)
 
-set(SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
-set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/resources)
+set(RESOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+set(RESOURCES_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/resources)
 
 file(GLOB SHADERS 
-    ${SHADER_SOURCE_DIR}/*.vert
-    ${SHADER_SOURCE_DIR}/*.frag
-    ${SHADER_SOURCE_DIR}/*.comp
+    ${RESOURCES_DIR}/*.vert
+    ${RESOURCES_DIR}/*.frag
+    ${RESOURCES_DIR}/*.comp
 )
 
 add_custom_command(
     COMMAND
-        ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
-    OUTPUT ${SHADER_BINARY_DIR}
-    COMMENT "Creating ${SHADER_BINARY_DIR}"
+        ${CMAKE_COMMAND} -E make_directory ${RESOURCES_BINARY_DIR}
+    OUTPUT ${RESOURCES_BINARY_DIR}
+    COMMENT "Creating ${RESOURCES_BINARY_DIR}"
 )
 
 foreach(source IN LISTS SHADERS)
@@ -32,17 +35,22 @@ foreach(source IN LISTS SHADERS)
         COMMAND
             ${glslangv_executable}
             -V -G
-            -o ${SHADER_BINARY_DIR}/${FILENAME}.spv
+            -o ${RESOURCES_BINARY_DIR}/${FILENAME}.spv
             ${source}
-        OUTPUT ${SHADER_BINARY_DIR}/${FILENAME}.spv
-        DEPENDS ${source} ${SHADER_BINARY_DIR}
+        OUTPUT ${RESOURCES_BINARY_DIR}/${FILENAME}.spv
+        DEPENDS ${source} ${RESOURCES_BINARY_DIR}
         COMMENT "Compiling ${FILENAME}"
     )
-    list(APPEND SPV_SHADERS ${SHADER_BINARY_DIR}/${FILENAME}.spv)
+    list(APPEND SPV_SHADERS ${RESOURCES_BINARY_DIR}/${FILENAME}.spv)
 endforeach()
 
-configure_file(${SHADER_SOURCE_DIR}/init.png ${SHADER_BINARY_DIR}/init.png COPYONLY)
+configure_file(${RESOURCES_DIR}/init.png ${RESOURCES_BINARY_DIR}/init.png COPYONLY)
+configure_file(${RESOURCES_DIR}/arial.ttf ${RESOURCES_BINARY_DIR}/arial.ttf COPYONLY)
+
+include_directories(../external)
 
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS} ${SHADER_RES})
-add_executable(${PROJECT_NAME} main.cpp)
-target_link_libraries(${PROJECT_NAME} GLEW::GLEW glfw OpenGL::GL)
+add_executable(${PROJECT_NAME} main.cpp font_renderer.cpp shader_util.hpp imgui_util.hpp)
+target_link_libraries(${PROJECT_NAME} GLEW::GLEW glfw OpenGL::GL freetype glm::glm imgui)
+target_include_directories(${PROJECT_NAME}
+    PUBLIC ${FREETYPE_INCLUDE_DIRS})

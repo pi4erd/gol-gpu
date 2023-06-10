@@ -1,8 +1,11 @@
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <vector>
 #include <cstring>
+#include <ctime>
+
+#include "font_renderer.hpp"
+#include "shader_util.hpp"
+#include "imgui_util.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -13,28 +16,24 @@
 // Uncomment to use shader binary
 #define SHADER_BIN
 
-GLFWwindow* window;
-
-GLuint vbo, ebo, vao, fbo, fbt, fbt2, blitprg, golcomp, initprg, copyprg;
-
-int Width = 1920, Height = 1080;
-
 const int TextureWidth = 1024, TextureHeight = 1024;
-
 const float vertices[] = {
     -1, -1, 0, 0, 0,
     1, -1, 0, 1, 0,
     1, 1, 0, 1, 1,
     -1, 1, 0, 0, 1
 };
-
 const GLuint indices[] = {
     0, 1, 2,
     0, 2, 3
 };
 
-double _time = 0;
+GLFWwindow* window;
 
+GLuint vbo, ebo, vao, fbo, fbt, fbt2, blitprg, golcomp, initprg, copyprg;
+int Width = 1920, Height = 1080;
+
+double _time = 0;
 double delay = 0;
 int frames = 0;
 
@@ -51,7 +50,9 @@ void init();
 void render(double delta);
 void end();
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void resize(GLFWwindow* window, int width, int height);
+void render_gui();
 
 int main() {
     glfwInit();
@@ -69,6 +70,7 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetWindowSizeCallback(window, resize);
     glfwSetScrollCallback(window, scrollCallback);
+    glfwSetKeyCallback(window, keyCallback);
 
     glewInit();
 
@@ -84,40 +86,6 @@ int main() {
     }
     end();
     return 0;
-}
-
-int compileShader(GLuint shader)
-{
-    glCompileShader(shader);
-
-    int success;
-    char infoLog[512];
-
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if(!success) {
-        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-        std::cerr << "Error while compiling shader (" << shader << ")\n" << infoLog << std::endl;
-        return 0;
-    }
-
-    return 1;
-}
-
-int linkProgram(GLuint program)
-{
-    glLinkProgram(program);
-
-    int success;
-    char infoLog[512];
-
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if(!success) {
-        glGetProgramInfoLog(program, 512, nullptr, infoLog);
-        std::cerr << "Error while compiling shader (" << program << ")\n" << infoLog << std::endl;
-        return 0;
-    }
-
-    return 1;
 }
 
 GLuint createTextureFromPath(const char* path, int unit) {
@@ -143,66 +111,12 @@ GLuint createTextureFromPath(const char* path, int unit) {
     return result;
 }
 
-GLuint createShaderFromBinary(const char *path, GLenum type)
-{
-    using namespace std;
-
-    ifstream binfile(path, ios::binary);
-
-    vector<unsigned char> buffer(istreambuf_iterator<char>(binfile), {});
-
-    GLuint shader = glCreateShader(type);
-    glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, buffer.data(), buffer.size());
-    glSpecializeShader(shader, "main", 0, 0, 0);
-
-    int success;
-
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-
-    if(!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-        std::cout << "Error compiling binary shader:\n" << infoLog << std::endl;
-        return -1;
-    }
-
-    /*if(!compileShader(shader)) {
-        std::cerr << "Compilation failed" << std::endl;
-        return -1;
-    }*/
-
-    return shader;
-}
-
-GLuint createShaderFromSource(const char* path, GLenum type) {
-    using namespace std;
-
-    ifstream infile(path);
-
-    string buffer;
-    string line;
-
-    while(!infile.eof()) {
-        getline(infile, line);
-        buffer += line + '\n';
-    }
-
-    const char* source = buffer.c_str();
-
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-
-    if(!compileShader(shader)) {
-        std::cerr << "Compilation failed" << std::endl;
-        return -1;
-    }
-
-    return shader;
-}
-
 void init()
 {
     glClearColor(0, 0, 0, 1);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     blitprg = glCreateProgram();
     golcomp = glCreateProgram();
@@ -289,11 +203,24 @@ void init()
     GLuint inittexture = createTextureFromPath("resources/init.png", 2);
     glBindImageTexture(2, inittexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
 
+    glUseProgram(blitprg);
+    glUniform1i(glGetUniformLocation(blitprg, "mainTexture"), 0);
+
+    time_t t = time(NULL);
+
     glUseProgram(initprg);
+    glUniform1i(glGetUniformLocation(initprg, "timestamp"), t);
     glDispatchCompute(TextureWidth, TextureHeight, 1);
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
     glDeleteTextures(1, &inittexture);
+
+    if(InitFontRenderer()) {
+        std::cout << "Error initializing font renderer!" << std::endl;
+        return;
+    }
+
+    InitializeIMGui(window);
 }
 
 float zoom = 1;
@@ -301,18 +228,22 @@ float zoom = 1;
 float posx = 0, posy = 0;
 
 void render(double delta) {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    InitNewImguiFrame();
+
+    glBindTextureUnit(0, fbt);
+    glBindTextureUnit(1, fbt2);
+
     glUseProgram(golcomp);
     glDispatchCompute(TextureWidth, TextureHeight, 1);
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
     glUseProgram(blitprg);
-    glBindTextureUnit(0, fbt);
-    glBindTextureUnit(1, fbt2);
     glUniform1f(glGetUniformLocation(blitprg, "zoom"), zoom);
     glUniform1f(glGetUniformLocation(blitprg, "aspectRatio"), Width / (float)Height);
     glUniform1f(glGetUniformLocation(blitprg, "posx"), posx);
     glUniform1f(glGetUniformLocation(blitprg, "posy"), posy);
-    glUniform1i(glGetUniformLocation(blitprg, "mainTexture"), 0);
     glBindVertexArray(vao);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(indices[0]), GL_UNSIGNED_INT, 0);
@@ -320,6 +251,8 @@ void render(double delta) {
     glUseProgram(copyprg);
     glDispatchCompute(TextureWidth, TextureHeight, 1);
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+    render_gui();    
 
     delay -= delta;
 
@@ -350,6 +283,10 @@ void end() {
     glDeleteProgram(golcomp);
     glDeleteProgram(initprg);
     glDeleteProgram(copyprg);
+
+    CleanupFontRenderer();
+    DestroyIMGui();
+
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);
@@ -365,9 +302,31 @@ void scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
     zoom *= (1 + yoffset * 0.1);
 }
 
+void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+    if(key == GLFW_KEY_R && action == GLFW_PRESS) {
+        std::time_t t = std::time(NULL);
+
+        glUseProgram(initprg);
+        glUniform1i(glGetUniformLocation(initprg, "timestamp"), t);
+        glDispatchCompute(TextureWidth, TextureHeight, 1);
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    }
+}
+
 void resize(GLFWwindow *window, int width, int height)
 {
     glViewport(0, 0, width, height);
     Width = width;
     Height = height;
+}
+
+void render_gui()
+{
+    ImGui::Begin("Statistics");
+    ImGui::Text("X: %f Y: %f", posx, posy);
+    ImGui::Text("Zoom: %f", zoom);
+    ImGui::End();
+
+    RenderImguiFrame();
 }
