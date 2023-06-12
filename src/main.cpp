@@ -16,13 +16,15 @@
 // Uncomment to use shader binary
 #define SHADER_BIN
 
-const int TextureWidth = 1024, TextureHeight = 1024;
+const int TextureWidth = 2048, TextureHeight = 2048;
+
 const float vertices[] = {
     -1, -1, 0, 0, 0,
     1, -1, 0, 1, 0,
     1, 1, 0, 1, 1,
     -1, 1, 0, 0, 1
 };
+
 const GLuint indices[] = {
     0, 1, 2,
     0, 2, 3
@@ -113,6 +115,8 @@ GLuint createTextureFromPath(const char* path, int unit) {
 
 void init()
 {
+    std::cout << "OpenGL " << glGetString(GL_VERSION) << std::endl;
+
     glClearColor(0, 0, 0, 1);
 
     glEnable(GL_BLEND);
@@ -122,6 +126,7 @@ void init()
     golcomp = glCreateProgram();
     initprg = glCreateProgram();
     copyprg = glCreateProgram();
+    
 #ifdef SHADER_BIN
     GLuint vx = createShaderFromBinary("resources/vertex.vert.spv", GL_VERTEX_SHADER);
     GLuint fg = createShaderFromBinary("resources/fragment.frag.spv", GL_FRAGMENT_SHADER);

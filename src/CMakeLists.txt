@@ -2,9 +2,9 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
+set(OpenGL_GL_PREFERENCE "GLVND")
+
 find_package(OpenGL REQUIRED)
-find_package(glfw3 3.3 REQUIRED)
-find_package(GLEW REQUIRED)
 find_package(Freetype REQUIRED)
 find_package(glm REQUIRED)
 
@@ -51,6 +51,6 @@ include_directories(../external)
 
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS} ${SHADER_RES})
 add_executable(${PROJECT_NAME} main.cpp font_renderer.cpp shader_util.hpp imgui_util.hpp)
-target_link_libraries(${PROJECT_NAME} GLEW::GLEW glfw OpenGL::GL freetype glm::glm imgui)
+target_link_libraries(${PROJECT_NAME} glew_s glfw OpenGL::GL freetype glm::glm imgui)
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${FREETYPE_INCLUDE_DIRS})
