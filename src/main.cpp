@@ -16,7 +16,7 @@
 // Uncomment to use shader binary
 #define SHADER_BIN
 
-const int TextureWidth = 2048, TextureHeight = 2048;
+const int TextureWidth = 1024, TextureHeight = 1024;
 
 const float vertices[] = {
     -1, -1, 0, 0, 0,
@@ -38,6 +38,7 @@ int Width = 1920, Height = 1080;
 double _time = 0;
 double delay = 0;
 int frames = 0;
+double delta = 0;
 
 /// @brief Compiles shader and returns error if unsuccessful
 /// @param shader Shader id
@@ -80,7 +81,7 @@ int main() {
 
     init();
     while(!glfwWindowShouldClose(window)) {
-        double delta = glfwGetTime() - _time;
+        delta = glfwGetTime() - _time;
         render(delta);
         _time = glfwGetTime();
         glfwSwapBuffers(window);
@@ -331,6 +332,7 @@ void render_gui()
     ImGui::Begin("Statistics");
     ImGui::Text("X: %f Y: %f", posx, posy);
     ImGui::Text("Zoom: %f", zoom);
+    ImGui::Text("FPS: %f", 1 / delta);
     ImGui::End();
 
     RenderImguiFrame();

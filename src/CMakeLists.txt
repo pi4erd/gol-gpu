@@ -47,10 +47,8 @@ endforeach()
 configure_file(${RESOURCES_DIR}/init.png ${RESOURCES_BINARY_DIR}/init.png COPYONLY)
 configure_file(${RESOURCES_DIR}/arial.ttf ${RESOURCES_BINARY_DIR}/arial.ttf COPYONLY)
 
-include_directories(../external)
-
 add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS} ${SHADER_RES})
 add_executable(${PROJECT_NAME} main.cpp font_renderer.cpp shader_util.hpp imgui_util.hpp)
-target_link_libraries(${PROJECT_NAME} glew_s glfw OpenGL::GL freetype glm::glm imgui)
+target_link_libraries(${PROJECT_NAME} ${GLEW_LIBRARIES} glfw OpenGL::GL freetype glm::glm imgui)
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${FREETYPE_INCLUDE_DIRS})
